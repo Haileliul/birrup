@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useApp } from '../context/AppContext';
+import { showRewardedAd } from '../lib/adsgram';
 import {
   Play,
   Zap,
@@ -10,12 +11,12 @@ import {
   ShieldCheck,
   CheckCircle2,
   ArrowUpRight,
-  Tv
+  Tv,
+  Radio
 } from 'lucide-react';
 
 export const EarnTab: React.FC = () => {
   const {
-    balance,
     watched,
     dailyLimit,
     cooldown,
@@ -24,14 +25,16 @@ export const EarnTab: React.FC = () => {
     earnings,
     recordAdWatched,
     setActiveTab,
+    isSupabaseLive,
   } = useApp();
 
   const [isVideoModalOpen, setIsVideoModalOpen] = useState(false);
   const [videoTimer, setVideoTimer] = useState(5);
   const [showAllEarnings, setShowAllEarnings] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [isLoadingAd, setIsLoadingAd] = useState(false);
 
-  const canWatch = watched < dailyLimit && cooldown === 0;
+  const canWatch = watched < dailyLimit && cooldown === 0 && !isLoadingAd;
 
   useEffect(() => {
     if (!isVideoModalOpen || videoTimer === 0) return;
@@ -41,17 +44,39 @@ export const EarnTab: React.FC = () => {
     return () => clearTimeout(interval);
   }, [isVideoModalOpen, videoTimer]);
 
-  const handleStartAd = () => {
+  const handleStartAd = async () => {
     if (!canWatch) return;
-    setVideoTimer(5);
-    setIsVideoModalOpen(true);
+
+    setIsLoadingAd(true);
+
+    // Attempt to trigger real AdsGram rewarded video ad
+    const adResult = await showRewardedAd();
+
+    setIsLoadingAd(false);
+
+    if (adResult.success) {
+      // User watched the real AdsGram video!
+      await recordAdWatched();
+      showToast(`AdsGram reward verified: +${reward.toFixed(2)} ETB!`);
+      return;
+    }
+
+    if (adResult.error === 'NO_BLOCK_ID' || !adResult.isRealAd) {
+      // Fallback to interactive demo preview simulator
+      setVideoTimer(5);
+      setIsVideoModalOpen(true);
+      return;
+    }
+
+    // User skipped or ad failed
+    showToast(`Ad incomplete: ${adResult.error}`);
   };
 
-  const handleClaimAdReward = () => {
+  const handleClaimAdReward = async () => {
     if (videoTimer > 0) return;
-    recordAdWatched();
+    await recordAdWatched();
     setIsVideoModalOpen(false);
-    showToast(`Demo reward added: +${reward.toFixed(2)} ETB`);
+    showToast(`Reward credited: +${reward.toFixed(2)} ETB`);
   };
 
   const showToast = (msg: string) => {
@@ -77,9 +102,18 @@ export const EarnTab: React.FC = () => {
           <h1>A little time. A little more birr.</h1>
           <p>Watch, earn, and make the most of your everyday.</p>
         </div>
-        <div className="live-tag">
-          <span className="live-dot" />
-          Let’s make today rewarding
+        <div className="flex items-center gap-2">
+          {/* Status Pills */}
+          <div className="live-tag">
+            <Radio size={12} className="animate-pulse text-primary" />
+            <span>AdsGram Ready</span>
+          </div>
+          {isSupabaseLive && (
+            <div className="live-tag !border-cyan/40 !text-cyan">
+              <span className="live-dot !bg-cyan" />
+              <span>Supabase Cloud</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -95,7 +129,6 @@ export const EarnTab: React.FC = () => {
               width={1024}
               height={1024}
               onError={(e) => {
-                // Fallback gracefully if image hasn't loaded yet
                 (e.currentTarget as HTMLElement).style.display = 'none';
               }}
             />
@@ -120,7 +153,9 @@ export const EarnTab: React.FC = () => {
               onClick={handleStartAd}
             >
               <Play size={17} fill="currentColor" />
-              {watched >= dailyLimit
+              {isLoadingAd
+                ? 'Loading AdsGram Ad…'
+                : watched >= dailyLimit
                 ? 'Daily limit reached'
                 : cooldown > 0
                 ? `Next video in ${cooldown}s`
@@ -276,10 +311,10 @@ export const EarnTab: React.FC = () => {
           <div className="modal-card">
             <div className="flex justify-between items-center mb-4">
               <h3 className="text-base font-bold text-foreground">Your next little reward</h3>
-              <span className="tiny-label">Demo video preview</span>
+              <span className="tiny-label">AdsGram Video Simulator</span>
             </div>
             <p className="text-xs text-muted-foreground mb-4">
-              Watch this short ad preview to credit +{reward.toFixed(2)} ETB directly to your Birrup wallet.
+              Watch this short preview video to verify and credit +{reward.toFixed(2)} ETB directly to your wallet.
             </p>
 
             <div className="video-stage">

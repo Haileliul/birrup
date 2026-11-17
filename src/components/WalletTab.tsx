@@ -23,10 +23,10 @@ export const WalletTab: React.FC = () => {
 
   const methods: PaymentMethod[] = ['Telebirr', 'CBE Birr', 'M-Pesa'];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const numAmount = Number(amount);
-    const result = submitPayoutRequest({
+    const result = await submitPayoutRequest({
       name: fullName,
       phone,
       amount: numAmount,

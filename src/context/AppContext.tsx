@@ -1,5 +1,14 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { PayoutRequest, EarningActivity, BonusTask, PaymentMethod, InvitedFriend } from '../types';
+import { getTelegramWebApp, initTelegramWebApp, triggerHaptic } from '../lib/telegram';
+import {
+  isSupabaseConfigured,
+  fetchRemoteUser,
+  recordAdRewardRemote,
+  submitWithdrawalRemote,
+  fetchAllWithdrawalsRemote,
+  adminProcessPayoutRemote,
+} from '../lib/supabase';
 
 interface AppContextType {
   balance: number;
@@ -23,19 +32,21 @@ interface AppContextType {
   setActiveView: (view: 'app' | 'admin') => void;
   viewMode: 'responsive' | 'telegram-frame';
   setViewMode: (mode: 'responsive' | 'telegram-frame') => void;
+  isSupabaseLive: boolean;
   user: {
     id: string;
+    numericId: number;
     username: string;
     name: string;
     initials: string;
     avatarUrl?: string;
   };
   creditReward: (amount: number, title: string) => void;
-  recordAdWatched: () => void;
+  recordAdWatched: () => Promise<boolean>;
   claimTask: (task: BonusTask) => boolean;
-  submitPayoutRequest: (params: { name: string; phone: string; amount: number; method: PaymentMethod }) => { success: boolean; error?: string };
-  markPayoutPaid: (id: string, reference: string) => void;
-  rejectPayout: (id: string, reason: string) => void;
+  submitPayoutRequest: (params: { name: string; phone: string; amount: number; method: PaymentMethod }) => Promise<{ success: boolean; error?: string }>;
+  markPayoutPaid: (id: string, reference: string) => Promise<void>;
+  rejectPayout: (id: string, reason: string) => Promise<void>;
   saveSettings: (newRate: number, newReward: number) => void;
 }
 
@@ -161,12 +172,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeView, setActiveView] = useState<'app' | 'admin'>('app');
   const [viewMode, setViewMode] = useState<'responsive' | 'telegram-frame'>('responsive');
 
+  // Detect Telegram WebApp user or fallback
+  const tg = getTelegramWebApp();
+  const tgUser = tg?.initDataUnsafe?.user;
+
   const user = {
-    id: '492718356',
-    username: '@haileliul',
-    name: 'Haileliul Baye',
-    initials: 'HB',
+    id: tgUser ? String(tgUser.id) : '492718356',
+    numericId: tgUser ? tgUser.id : 492718356,
+    username: tgUser?.username ? `@${tgUser.username}` : '@haileliul',
+    name: tgUser
+      ? `${tgUser.first_name || ''} ${tgUser.last_name || ''}`.trim() || 'Telegram User'
+      : 'Haileliul Baye',
+    initials: tgUser
+      ? `${tgUser.first_name?.[0] || 'T'}${tgUser.last_name?.[0] || 'U'}`.toUpperCase()
+      : 'HB',
+    avatarUrl: tgUser?.photo_url,
   };
+
+  // Initialize Telegram WebApp on mount
+  useEffect(() => {
+    initTelegramWebApp();
+  }, []);
+
+  // Sync with Supabase on mount if configured
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    fetchRemoteUser(user.numericId, user.username, user.name).then((data) => {
+      if (data) {
+        setBalance(Number(data.balance));
+        setTotalEarned(Number(data.total_earned));
+        setWatched(Number(data.ads_watched_today));
+      }
+    });
+
+    fetchAllWithdrawalsRemote().then((remotePayouts) => {
+      if (remotePayouts && remotePayouts.length > 0) {
+        setPayouts(remotePayouts);
+      }
+    });
+  }, [user.numericId]);
 
   // Cooldown countdown
   useEffect(() => {
@@ -189,13 +234,29 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       },
       ...prev,
     ]);
+    triggerHaptic('success');
   };
 
-  const recordAdWatched = () => {
-    if (watched >= dailyLimit || cooldown > 0) return;
+  const recordAdWatched = async (): Promise<boolean> => {
+    if (watched >= dailyLimit || cooldown > 0) return false;
+
+    if (isSupabaseConfigured) {
+      const res = await recordAdRewardRemote(user.numericId, reward);
+      if (res && res.success) {
+        setBalance(Number(res.new_balance));
+        setTotalEarned(Number(res.total_earned));
+        setWatched(Number(res.ads_watched_today));
+        setCooldown(30);
+        triggerHaptic('success');
+        return true;
+      }
+    }
+
+    // Local / Offline fallback
     setWatched((prev) => prev + 1);
     creditReward(reward, 'Video reward');
     setCooldown(30);
+    return true;
   };
 
   const claimTask = (task: BonusTask) => {
@@ -205,7 +266,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     return true;
   };
 
-  const submitPayoutRequest = ({
+  const submitPayoutRequest = async ({
     name,
     phone,
     amount,
@@ -220,18 +281,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const cleanPhone = phone.replace(/\s+/g, '');
 
     if (trimmedName.split(/\s+/).length < 2) {
+      triggerHaptic('error');
       return { success: false, error: 'Enter the account holder’s full name (first & last).' };
     }
     if (!/^[79]\d{8}$/.test(cleanPhone)) {
+      triggerHaptic('error');
       return { success: false, error: 'Enter a valid 9-digit Ethiopian mobile number (e.g. 912345678).' };
     }
     if (!Number.isFinite(amount) || amount < 500) {
+      triggerHaptic('error');
       return { success: false, error: 'The minimum withdrawal is 500 ETB.' };
     }
     if (amount > balance) {
+      triggerHaptic('error');
       return { success: false, error: 'The amount exceeds your available balance.' };
     }
 
+    if (isSupabaseConfigured) {
+      const res = await submitWithdrawalRemote({
+        telegramId: user.numericId,
+        name: trimmedName,
+        phone: cleanPhone,
+        method,
+        amount,
+      });
+
+      if (res && res.success) {
+        setBalance(Number(res.new_balance));
+        const updated = await fetchAllWithdrawalsRemote();
+        if (updated) setPayouts(updated);
+        triggerHaptic('success');
+        return { success: true };
+      } else {
+        triggerHaptic('error');
+        return { success: false, error: res?.error || 'Failed to submit withdrawal' };
+      }
+    }
+
+    // Local fallback
     setBalance((prev) => prev - amount);
     const newRequest: PayoutRequest = {
       id: String(Date.now()),
@@ -247,29 +334,46 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     };
 
     setPayouts((prev) => [newRequest, ...prev]);
+    triggerHaptic('success');
     return { success: true };
   };
 
-  const markPayoutPaid = (id: string, reference: string) => {
-    setPayouts((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, status: 'Completed', reference } : item))
-    );
+  const markPayoutPaid = async (id: string, reference: string) => {
+    if (isSupabaseConfigured) {
+      await adminProcessPayoutRemote(id, 'pay', reference);
+      const updated = await fetchAllWithdrawalsRemote();
+      if (updated) setPayouts(updated);
+    } else {
+      setPayouts((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, status: 'Completed', reference } : item))
+      );
+    }
+    triggerHaptic('success');
   };
 
-  const rejectPayout = (id: string, reason: string) => {
-    const target = payouts.find((p) => p.id === id);
-    if (target && target.username === user.username) {
-      // Refund balance
-      setBalance((prev) => prev + target.amount);
+  const rejectPayout = async (id: string, reason: string) => {
+    if (isSupabaseConfigured) {
+      await adminProcessPayoutRemote(id, 'reject', undefined, reason);
+      const updated = await fetchAllWithdrawalsRemote();
+      if (updated) setPayouts(updated);
+      const freshUser = await fetchRemoteUser(user.numericId);
+      if (freshUser) setBalance(Number(freshUser.balance));
+    } else {
+      const target = payouts.find((p) => p.id === id);
+      if (target && target.username === user.username) {
+        setBalance((prev) => prev + target.amount);
+      }
+      setPayouts((prev) =>
+        prev.map((item) => (item.id === id ? { ...item, status: 'Rejected', rejectionReason: reason } : item))
+      );
     }
-    setPayouts((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, status: 'Rejected', rejectionReason: reason } : item))
-    );
+    triggerHaptic('warning');
   };
 
   const saveSettings = (newRate: number, newReward: number) => {
     setRate(newRate);
     setReward(newReward);
+    triggerHaptic('success');
   };
 
   return (
@@ -296,6 +400,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveView,
         viewMode,
         setViewMode,
+        isSupabaseLive: isSupabaseConfigured,
         user,
         creditReward,
         recordAdWatched,

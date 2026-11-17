@@ -126,7 +126,7 @@ export const AdminDashboard: React.FC = () => {
     setRejectReason('');
   };
 
-  const handleConfirmModalAction = () => {
+  const handleConfirmModalAction = async () => {
     if (!selectedPayout) return;
 
     if (modalMode === 'pay') {
@@ -134,14 +134,14 @@ export const AdminDashboard: React.FC = () => {
         showToast('Please enter the mobile money transaction reference ID.');
         return;
       }
-      markPayoutPaid(selectedPayout.id, referenceId.trim());
+      await markPayoutPaid(selectedPayout.id, referenceId.trim());
       showToast(`Payout marked as Paid! Reference: ${referenceId.trim()}`);
     } else {
       if (!rejectReason.trim()) {
         showToast('Please enter a rejection reason.');
         return;
       }
-      rejectPayout(selectedPayout.id, rejectReason.trim());
+      await rejectPayout(selectedPayout.id, rejectReason.trim());
       showToast(`Payout rejected and refunded ${selectedPayout.amount} ETB to user.`);
     }
 
