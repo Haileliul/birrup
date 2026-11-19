@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useApp } from '../context/AppContext';
+import { GameModal } from './GameModal';
 import {
   Zap,
   Play,
@@ -15,6 +16,7 @@ import {
   ShieldCheck,
   ChevronRight,
   X,
+  Gamepad2,
   LucideIcon
 } from 'lucide-react';
 
@@ -27,6 +29,8 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
     setActiveView,
     viewMode,
     setViewMode,
+    isGameOpen,
+    setIsGameOpen,
     user,
   } = useApp();
 
@@ -96,6 +100,19 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
               </button>
             );
           })}
+
+          {/* Play Game Nav Button */}
+          <button
+            type="button"
+            onClick={() => setIsGameOpen(true)}
+            className="nav-item group w-full text-left cursor-pointer transition-all hover:bg-secondary/80 !text-primary font-bold"
+          >
+            <Gamepad2 size={20} className="text-primary group-hover:scale-110 transition-transform" />
+            <span>Play Game</span>
+            <span className="ml-auto text-[10px] font-extrabold uppercase px-1.5 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30">
+              HOT
+            </span>
+          </button>
 
           <div className="divider" />
 
@@ -250,13 +267,58 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
               </div>
 
               {/* Scrollable Mini App Inside Frame */}
-              <div className="flex-1 overflow-y-auto px-4 py-4 pb-24">
+              <div className="flex-1 overflow-y-auto px-4 py-4 pb-24 relative">
                 {children}
+
+                {/* Floating Game Controller Button inside Phone Frame */}
+                <button
+                  type="button"
+                  onClick={() => setIsGameOpen(true)}
+                  className="absolute right-3.5 bottom-20 z-30 w-11 h-11 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-[0_0_18px_rgba(74,222,128,0.55)] hover:scale-110 active:scale-95 transition-transform cursor-pointer"
+                  title="Play Coin Rush"
+                  aria-label="Play Game"
+                >
+                  <Gamepad2 size={22} />
+                </button>
               </div>
 
               {/* Fixed Bottom Navigation inside Frame */}
               <nav className="mobile-nav !flex">
-                {navItems.map((item) => {
+                {navItems.slice(0, 2).map((item) => {
+                  const Icon = item.icon;
+                  const isActive = activeView === 'app' && activeTab === item.id;
+                  return (
+                    <button
+                      type="button"
+                      key={item.id}
+                      onClick={() => {
+                        setActiveView('app');
+                        setActiveTab(item.id);
+                      }}
+                      className={`flex flex-col items-center gap-1 text-[11px] font-semibold cursor-pointer transition-colors ${
+                        isActive ? 'text-primary' : 'text-muted-foreground'
+                      }`}
+                    >
+                      <Icon size={20} />
+                      <span>{item.label}</span>
+                    </button>
+                  );
+                })}
+
+                {/* Play Game Nav Button */}
+                <button
+                  type="button"
+                  onClick={() => setIsGameOpen(true)}
+                  className="flex flex-col items-center gap-1 text-[11px] font-bold text-primary cursor-pointer hover:opacity-90 active:scale-95 transition-all"
+                >
+                  <div className="relative">
+                    <Gamepad2 size={20} className="text-primary animate-bounce" />
+                    <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-cyan animate-ping" />
+                  </div>
+                  <span className="text-[10px]">Play Game</span>
+                </button>
+
+                {navItems.slice(2).map((item) => {
                   const Icon = item.icon;
                   const isActive = activeView === 'app' && activeTab === item.id;
                   return (
@@ -306,7 +368,41 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
         {/* Native Mobile Bottom Navigation Bar (Shown on small screens in responsive mode) */}
         {viewMode !== 'telegram-frame' && (
           <nav className="mobile-nav">
-            {navItems.map((item) => {
+            {navItems.slice(0, 2).map((item) => {
+              const Icon = item.icon;
+              const isActive = activeView === 'app' && activeTab === item.id;
+              return (
+                <button
+                  type="button"
+                  key={item.id}
+                  onClick={() => {
+                    setActiveView('app');
+                    setActiveTab(item.id);
+                  }}
+                  className={`flex flex-col items-center gap-1 text-[11px] font-semibold cursor-pointer ${
+                    isActive ? 'text-primary' : 'text-muted-foreground'
+                  }`}
+                >
+                  <Icon size={20} />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+
+            {/* Play Game Nav Button */}
+            <button
+              type="button"
+              onClick={() => setIsGameOpen(true)}
+              className="flex flex-col items-center gap-1 text-[11px] font-bold text-primary cursor-pointer hover:opacity-90 active:scale-95 transition-all"
+            >
+              <div className="relative">
+                <Gamepad2 size={20} className="text-primary animate-bounce" />
+                <span className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-cyan animate-ping" />
+              </div>
+              <span className="text-[10px]">Play Game</span>
+            </button>
+
+            {navItems.slice(2).map((item) => {
               const Icon = item.icon;
               const isActive = activeView === 'app' && activeTab === item.id;
               return (
@@ -329,6 +425,28 @@ export const AppShell: React.FC<{ children: React.ReactNode }> = ({ children }) 
           </nav>
         )}
       </div>
+
+      {/* Floating Game Controller Button on the Right Side */}
+      <button
+        type="button"
+        onClick={() => setIsGameOpen(true)}
+        className="fixed right-4 sm:right-6 bottom-24 sm:bottom-8 z-40 w-13 h-13 sm:w-14 sm:h-14 rounded-full bg-primary text-primary-foreground flex items-center justify-center shadow-[0_0_24px_rgba(74,222,128,0.55)] hover:shadow-[0_0_35px_rgba(74,222,128,0.85)] hover:scale-110 active:scale-95 transition-all duration-300 cursor-pointer group"
+        title="Play Coin Rush Game"
+        aria-label="Play Game"
+      >
+        <Gamepad2 size={26} className="group-hover:rotate-12 transition-transform duration-300" />
+        {/* Tooltip hint on hover */}
+        <span className="absolute right-full mr-3 px-2.5 py-1 rounded-md bg-card border border-border text-xs font-bold text-foreground whitespace-nowrap opacity-0 group-hover:opacity-100 pointer-events-none transition-opacity shadow-lg">
+          Play Coin Rush 🎮
+        </span>
+      </button>
+
+      {/* Coin Rush Game Modal */}
+      <GameModal
+        isOpen={isGameOpen}
+        onClose={() => setIsGameOpen(false)}
+        gameUrl="https://coin-rush-iota.vercel.app/"
+      />
 
       {/* Notifications Modal */}
       {isNotifOpen && (

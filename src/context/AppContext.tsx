@@ -32,6 +32,8 @@ interface AppContextType {
   setActiveView: (view: 'app' | 'admin') => void;
   viewMode: 'responsive' | 'telegram-frame';
   setViewMode: (mode: 'responsive' | 'telegram-frame') => void;
+  isGameOpen: boolean;
+  setIsGameOpen: React.Dispatch<React.SetStateAction<boolean>>;
   isSupabaseLive: boolean;
   user: {
     id: string;
@@ -171,6 +173,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [activeTab, setActiveTab] = useState<'earn' | 'tasks' | 'friends' | 'wallet'>('earn');
   const [activeView, setActiveView] = useState<'app' | 'admin'>('app');
   const [viewMode, setViewMode] = useState<'responsive' | 'telegram-frame'>('responsive');
+  const [isGameOpen, setIsGameOpen] = useState<boolean>(false);
 
   // Detect Telegram WebApp user or fallback
   const tg = getTelegramWebApp();
@@ -400,6 +403,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         setActiveView,
         viewMode,
         setViewMode,
+        isGameOpen,
+        setIsGameOpen,
         isSupabaseLive: isSupabaseConfigured,
         user,
         creditReward,
